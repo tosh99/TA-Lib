@@ -1,0 +1,54 @@
+{
+  "name": "ta-pattern-lib",
+  "version": "0.0.19",
+  "description": "Formulas for Technical Analysis and Pattern Matching",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/cjs/index.js",
+      "import": "./dist/esm/index.js",
+      "types": "./dist/types/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build:esm": "tsc",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build": "npm run build:esm && npm run build:cjs",
+    "prepublishOnly": "npm run build",
+    "run": "tsc -p tsconfig.cjs.json --watch",
+    "testRun": "node dist/cjs/test.js"
+  },
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "src"
+  ],
+  "keywords": [
+    "Technical",
+    "Analysis",
+    "TALib",
+    "Pattern",
+    "Matching",
+    "Stock",
+    "Analysis"
+  ],
+  "author": "Anutosh Chaudhuri",
+  "license": "MIT",
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^26.0.1",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-typescript": "^11.1.6",
+    "@types/lodash.round": "^4.0.9",
+    "@types/node": "^20.14.9",
+    "prettier": "3.3.2",
+    "rollup": "^4.18.0",
+    "tslib": "^2.6.3",
+    "typescript": "^5.5.2"
+  },
+  "dependencies": {
+    "lodash.round": "^4.0.4"
+  }
+}
