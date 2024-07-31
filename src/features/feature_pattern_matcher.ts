@@ -135,7 +135,7 @@ export const match_pattern_closeness = (ohlc_patt: IPatternOHLC[], ohlc_data: IO
     };
 };
 
-const calculate_closeness_gradient = (source: any, target: any, key: string): number => {
+export const calculate_closeness_gradient = (source: any, target: any, key: string): number => {
     let current_closeness = 0;
     if (source[key] >= 0.99 * target[key] && source[key] <= 1.01 * target[key]) {
         current_closeness = 25;
