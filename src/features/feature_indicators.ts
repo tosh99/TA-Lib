@@ -1,6 +1,7 @@
 import {stats_ema, stats_mean} from "./feature_statistics";
-import {ISanitizedOHLC, IOHLC} from "../types/types_ohlc";
+import {ISanitizedOHLC, IOHLC, BollingerBands} from "../types/types_ohlc";
 import {sanitize_ohlc} from "./feature_ohlc";
+import round from "lodash.round";
 
 export const indi_adx = (ohlc_data: IOHLC[], period: number): number[] => {
     const trueRanges: number[] = [];
@@ -181,6 +182,36 @@ export const ind_alligator = (
         lips: lipsValues,
     };
 };
+
+export const ind_bollinger_bands = (data: IOHLC[], period: number = 20, multiplier: number = 2): BollingerBands => {
+  const closePrices = data.map(d => round(Number(d.close), 2));
+  const middle: number[] = [];
+  const upper: number[] = [];
+  const lower: number[] = [];
+
+  function simpleMovingAverage(prices: number[], period: number, index: number): number {
+    const slice = prices.slice(index - period, index);
+    const sum = slice.reduce((acc, price) => acc + price, 0);
+    return sum / period;
+  }
+
+  function standardDeviation(prices: number[], period: number, index: number, sma: number): number {
+    const slice = prices.slice(index - period, index);
+    const variance = slice.reduce((acc, price) => acc + Math.pow(price - sma, 2), 0) / period;
+    return Math.sqrt(variance);
+  }
+
+  for (let i = period; i <= closePrices.length; i++) {
+    const sma = simpleMovingAverage(closePrices, period, i);
+    const stdDev = standardDeviation(closePrices, period, i, sma);
+
+    middle.push(sma);
+    upper.push(sma + multiplier * stdDev);
+    lower.push(sma - multiplier * stdDev);
+  }
+
+  return { middle, upper, lower };
+}
 
 const calculateSmoothedAverage = (data: number[], period: number): number[] => {
     const smoothedData: number[] = [];

@@ -46,6 +46,7 @@ const parse_technical_analysis = (ta_expression: string, ohlc_data: IOHLC[]): nu
     const index_regex = /\[\d+]/gi;
     const index: number = round(Number(findRegexSubstring(ta_expression, index_regex).replaceAll("[", "").replaceAll("]", "")?.trim()));
 
+    // Parse if Open/Close Specifier Present
     const open_close_regex = /(open|high|low|close|volume)/gi;
     const ohlc_key = <"open" | "close" | "high" | "volume" | "low">findRegexSubstring(ta_expression, open_close_regex);
 

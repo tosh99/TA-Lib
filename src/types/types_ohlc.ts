@@ -26,3 +26,9 @@ export interface IPatternOHLC extends ISanitizedOHLC {
 export interface IHeikinAshi extends ISanitizedOHLC {
     [key: string]: any;
 }
+
+export type BollingerBands = {
+  middle: number[];
+  upper: number[];
+  lower: number[];
+};
