@@ -1,5 +1,6 @@
 import round from "lodash.round";
 import { BollingerBands, Candle } from "../types/types_ohlc";
+import { FunctionRegistry } from "./feature_dsl_parser";
 import { compute_ema, stats_mean } from "./feature_statistics";
 
 export const compute_adx = (ohlc_data: Candle[], period: number): number[] => {
@@ -210,6 +211,58 @@ export const compute_bollinger_bands = (data: Candle[], period: number = 20, mul
     return { middle, upper, lower };
 };
 
+export const compute_vwap = (data: Candle[]): number[] => {
+    const vwap_values: number[] = [];
+    let cumulative_volume = 0;
+    let cumulative_price_volume = 0;
+
+    for (let i = 0; i < data.length; i++) {
+        const typical_price = (data[i].high + data[i].low + data[i].close) / 3;
+        const volume = parseInt(data[i].volume.toString());
+        
+        cumulative_volume += volume;
+        cumulative_price_volume += typical_price * volume;
+        
+        const vwap = cumulative_price_volume / cumulative_volume;
+        vwap_values.push(vwap);
+    }
+
+    return vwap_values;
+};
+
+export const compute_atr = (data: Candle[], period: number = 14): number[] => {
+    const true_ranges: number[] = [];
+    const atr_values: number[] = [];
+
+    // Calculate True Range for each candle
+    for (let i = 1; i < data.length; i++) {
+        const high = data[i].high;
+        const low = data[i].low;
+        const prev_close = data[i - 1].close;
+        
+        const tr1 = high - low;
+        const tr2 = Math.abs(high - prev_close);
+        const tr3 = Math.abs(low - prev_close);
+        
+        const true_range = Math.max(tr1, tr2, tr3);
+        true_ranges.push(true_range);
+    }
+
+    // Calculate initial ATR as simple average of first 'period' true ranges
+    if (true_ranges.length >= period) {
+        const first_atr = true_ranges.slice(0, period).reduce((sum, tr) => sum + tr, 0) / period;
+        atr_values.push(first_atr);
+        
+        // Calculate subsequent ATR values using the smoothing formula
+        for (let i = period; i < true_ranges.length; i++) {
+            const current_atr = (atr_values[atr_values.length - 1] * (period - 1) + true_ranges[i]) / period;
+            atr_values.push(current_atr);
+        }
+    }
+
+    return atr_values;
+};
+
 const calculate_smoothed_average = (data: number[], period: number): number[] => {
     const smoothed_data: number[] = [];
 
@@ -223,4 +276,97 @@ const calculate_smoothed_average = (data: number[], period: number): number[] =>
     }
 
     return smoothed_data;
+};
+
+export const DEFAULT_FUNCTION_REGISTRY: FunctionRegistry = {
+    open: {
+        fn: (candles, context, offset) => {
+            return candles[candles.length - 1 - offset].open;
+        },
+        arity: 1,
+    },
+    high: {
+        fn: (candles, context, offset) => {
+            return candles[candles.length - 1 - offset].high;
+        },
+        arity: 1,
+    },
+    low: {
+        fn: (candles, context, offset) => {
+            return candles[candles.length - 1 - offset].low;
+        },
+        arity: 1,
+    },
+    close: {
+        fn: (candles, context, offset) => {
+            return candles[candles.length - 1 - offset].close;
+        },
+        arity: 1,
+    },
+    ema: {
+        fn: (candles, context, period, offset) => {
+            return compute_ema(
+                candles.map((item) => item.close),
+                period,
+            )[candles.length - 1 - offset];
+        },
+        arity: 2,
+    },
+    macd_macd_line: {
+        fn: (candles, context, short_period, long_period, signal_period, offset) => {
+            const macd = compute_macd(
+                candles.map((item) => item.close),
+                short_period,
+                long_period,
+                signal_period,
+            );
+            return macd.macd[macd.macd.length - 1 - offset];
+        },
+        arity: 4,
+    },
+    macd_signal_line: {
+        fn: (candles, context, short_period, long_period, signal_period, offset) => {
+            const macd = compute_macd(
+                candles.map((item) => item.close),
+                short_period,
+                long_period,
+                signal_period,
+            );
+            return macd.signal_line[macd.signal_line.length - 1 - offset];
+        },
+        arity: 3,
+    },
+    obv: {
+        fn: (candles, context, offset) => {
+            const obv = compute_obv(candles);
+            return obv[obv.length - 1 - offset];
+        },
+        arity: 1,
+    },
+    vwap: {
+        fn: (candles, context, offset) => {
+            const vwap = compute_vwap(candles);
+            return vwap[vwap.length - 1 - offset];
+        },
+        arity: 1,
+    },
+    atr: {
+        fn: (candles, context, period, offset) => {
+            const atr_values = compute_atr(candles, period);
+            return atr_values[atr_values.length - 1 - offset];
+        },
+        arity: 2,
+    },
+    avg: {
+        fn: (candles, context, ...args) => args.reduce((sum, x) => sum + x, 0) / args.length,
+        arity: null,
+    },
+    entry_price: {
+        fn: (candles, context) => context.entry_price,
+        arity: null,
+    },
+    exit_price: {
+        fn: (candles, context) => context.exit_price,
+        arity: null,
+    },
 };
