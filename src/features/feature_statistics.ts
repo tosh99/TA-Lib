@@ -1,5 +1,4 @@
 import round from "lodash.round";
-import { ISanitizedOHLC } from "../types/types_ohlc";
 
 export const stats_mean = (data: number[]): number => {
     const sum = data.reduce((acc, val) => acc + val, 0);
@@ -24,10 +23,10 @@ export const stats_standard_deviation = (numbers: number[]): number => {
     const mean = numbers.reduce((sum, num) => sum + num, 0) / n;
 
     // Calculate the sum of squared differences
-    const squaredDifferencesSum = numbers.reduce((sum, num) => sum + Math.pow(num - mean, 2), 0);
+    const squared_differences_sum = numbers.reduce((sum, num) => sum + Math.pow(num - mean, 2), 0);
 
     // Calculate the variance
-    const variance = squaredDifferencesSum / n;
+    const variance = squared_differences_sum / n;
 
     // Calculate the standard deviation (square root of variance)
     return Math.sqrt(variance);
@@ -39,14 +38,14 @@ export const stats_normalize = (data: number[]): number[] => {
     return data.map((value) => (value - min) / (max - min));
 };
 
-export const stats_resample_data = (data: number[], newLength: number): number[] => {
-    const step = (data.length - 1) / (newLength - 1);
-    return Array.from({ length: newLength }, (_, i) => {
+export const stats_resample_data = (data: number[], new_length: number): number[] => {
+    const step = (data.length - 1) / (new_length - 1);
+    return Array.from({ length: new_length }, (_, i) => {
         const index = i * step;
-        const lowerIndex = Math.floor(index);
-        const upperIndex = Math.ceil(index);
-        const weight = index - lowerIndex;
-        return data[lowerIndex] * (1 - weight) + data[upperIndex] * weight;
+        const lower_index = Math.floor(index);
+        const upper_index = Math.ceil(index);
+        const weight = index - lower_index;
+        return data[lower_index] * (1 - weight) + data[upper_index] * weight;
     });
 };
 
@@ -68,31 +67,31 @@ export const correlate = (a: number[], b: number[]): number[] => {
 };
 
 export const stats_min_max_scaling = (array: any[], key: string): any[] => {
-    let minValue = Number.POSITIVE_INFINITY;
-    let maxValue = Number.NEGATIVE_INFINITY;
+    let min_value = Number.POSITIVE_INFINITY;
+    let max_value = Number.NEGATIVE_INFINITY;
 
     // Find the minimum and maximum values of the specified key
     for (const obj of array) {
         const value = obj[key];
-        if (value < minValue) {
-            minValue = value;
+        if (value < min_value) {
+            min_value = value;
         }
-        if (value > maxValue) {
-            maxValue = value;
+        if (value > max_value) {
+            max_value = value;
         }
     }
 
     // Scale the values to the range [0, 1]
-    const range = maxValue - minValue;
+    const range = max_value - min_value;
     for (const obj of array) {
         const value = obj[key];
-        obj[key] = round((value - minValue) / range, 2);
+        obj[key] = round((value - min_value) / range, 2);
     }
 
     return [...array];
 };
 
-export const stats_ema = (numbers: number[], period: number, multiplier = 2): number[] => {
+export const compute_ema = (numbers: number[], period: number, multiplier = 2): number[] => {
     const ema_array = [];
     const multiplier_value = multiplier / (period + 1);
     let ema = round(numbers[0], 3);

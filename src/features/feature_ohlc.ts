@@ -1,34 +1,9 @@
 import round from "lodash.round";
-import { IHeikinAshi, IOHLC, ISanitizedOHLC } from "../types/types_ohlc";
+import { IHeikinAshi, Candle } from "../types/types_ohlc";
 import { stats_median } from "./feature_statistics";
 
-export const sanitize_ohlc = (ohlc: IOHLC[]): ISanitizedOHLC[] => {
-    const sanitized_ohlc: ISanitizedOHLC[] = [];
-    for (const pattern of ohlc) {
-        const open = round(Number(pattern.open), 2);
-        const high = round(Number(pattern.high), 2);
-        const close = round(Number(pattern.close), 2);
-        const low = round(Number(pattern.low), 2);
-        const volume = round(Number(pattern.volume), 2);
-        const mid = round((open + high + low + close) / 4, 2);
-
-        sanitized_ohlc.push({
-            ...pattern,
-            open: open,
-            high: high,
-            low: low,
-            close: close,
-            volume: volume,
-            mid: mid,
-        });
-    }
-
-    return [...sanitized_ohlc];
-};
-
-export const calculate_heikin_ashi = (input_ohlc: IHeikinAshi[]): IHeikinAshi[] => {
+export const calculate_heikin_ashi = (ohlc: IHeikinAshi[]): IHeikinAshi[] => {
     const heikin_ashi_data: IHeikinAshi[] = [];
-    const ohlc = sanitize_ohlc(input_ohlc);
 
     // console.log("ohlc", ohlc);
     for (let i = 0; i < ohlc.length; i++) {
@@ -54,8 +29,7 @@ export const calculate_heikin_ashi = (input_ohlc: IHeikinAshi[]): IHeikinAshi[] 
     return heikin_ashi_data;
 };
 
-export const calculate_median_ohlc = (input_ohlc: IOHLC[]): IOHLC => {
-    const ohlc = sanitize_ohlc(input_ohlc);
+export const calculate_median_ohlc = (ohlc: Candle[]): Candle => {
     const med_open = stats_median(ohlc.map((tick) => tick.open));
     const med_high = stats_median(ohlc.map((tick) => tick.high));
     const med_low = stats_median(ohlc.map((tick) => tick.low));
@@ -63,6 +37,7 @@ export const calculate_median_ohlc = (input_ohlc: IOHLC[]): IOHLC => {
     const med_volume = stats_median(ohlc.map((tick) => tick.volume));
 
     return {
+        time: ohlc[0].time,
         close: med_close,
         high: med_high,
         low: med_low,

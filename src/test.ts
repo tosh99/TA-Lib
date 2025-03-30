@@ -1,35 +1,63 @@
-import { match_pattern_closeness_alternate } from "./features/feature_pattern_matcher";
-import { IPatternOHLC } from "./types/types_ohlc";
+import { DSLParser, FunctionRegistry } from "./features/feature_dsl_parser";
+import { Candle } from "./types/types_ohlc";
 
-const run = () => {
-    const ohlc_data: IPatternOHLC[] = [
-        { open: 1, high: 1, low: 1, close: 1, volume: 1, tick_distance: 0, mid: 0 },
-        { open: 2, high: 2, low: 2, close: 2, volume: 2, tick_distance: 50, mid: 0 },
-        { open: 3, high: 3, low: 3, close: 3, volume: 3, tick_distance: 100, mid: 0 },
-        { open: 4, high: 4, low: 4, close: 4, volume: 4, tick_distance: 100, mid: 0 },
-        { open: 5, high: 5, low: 5, close: 5, volume: 5, tick_distance: 100, mid: 0 },
-    ];
+const mockCandles: Candle[] = [
+    { time: "2024-01-01", open: 100, high: 105, low: 99, close: 102, volume: 1000 },
+    { time: "2024-01-02", open: 102, high: 108, low: 101, close: 106, volume: 1100 },
+    { time: "2024-01-03", open: 106, high: 110, low: 104, close: 108, volume: 1050 },
+    { time: "2024-01-04", open: 108, high: 112, low: 107, close: 111, volume: 1200 },
+    { time: "2024-01-05", open: 111, high: 115, low: 109, close: 114, volume: 1250 },
+];
 
-    const pattern_data = [
-        { open: 5, high: 5, low: 5, close: 5, volume: 5 },
-        { open: 7, high: 7, low: 7, close: 7, volume: 7 },
-        { open: 10, high: 10, low: 10, close: 10, volume: 10 },
-        { open: 9, high: 9, low: 9, close: 9, volume: 9 },
-        { open: 15, high: 15, low: 15, close: 15, volume: 15 },
-        { open: 5, high: 5, low: 5, close: 5, volume: 5 },
-        { open: 7, high: 7, low: 7, close: 7, volume: 7 },
-        { open: 10, high: 10, low: 10, close: 10, volume: 10 },
-        { open: 9, high: 9, low: 9, close: 9, volume: 9 },
-        { open: 15, high: 15, low: 15, close: 15, volume: 15 },
-        { open: 5, high: 5, low: 5, close: 5, volume: 5 },
-        { open: 7, high: 7, low: 7, close: 7, volume: 7 },
-        { open: 10, high: 10, low: 10, close: 10, volume: 10 },
-        { open: 9, high: 9, low: 9, close: 9, volume: 9 },
-        { open: 15, high: 15, low: 15, close: 15, volume: 15 },
-    ];
-    const resample_data = match_pattern_closeness_alternate(ohlc_data, pattern_data);
+function compute_ema(candles: Candle[], period: number): number[] {
+    const k = 2 / (period + 1);
+    const ema: number[] = [];
 
-    console.log(resample_data);
+    for (let i = 0; i < candles.length; i++) {
+        const close = candles[i].close;
+        if (i === 0) {
+            ema.push(close);
+        } else {
+            const prev = ema[i - 1];
+            ema.push((close - prev) * k + prev);
+        }
+    }
+
+    return ema;
+}
+
+export const function_registry: FunctionRegistry = {
+    ema: {
+        fn: (candles, period, offset) => {
+            const current_index = candles.length - 1;
+            const target_index = current_index - offset;
+            if (target_index < 0) return NaN;
+            const slice = candles.slice(0, target_index + 1);
+            return compute_ema(slice, period).at(-1)!;
+        },
+        arity: 2,
+        description: "EMA(period, offset)",
+    },
+    close: {
+        fn: (candles, offset) => {
+            const i = candles.length - 1 - offset;
+            return i >= 0 ? candles[i].close : NaN;
+        },
+        arity: 1,
+        description: "Close(offset)",
+    },
+    myfunc: {
+        fn: (_candles, a, b, c) => a * 0.5 + b * 0.3 + c * 0.2,
+        arity: 3,
+    },
+
+    avg: {
+        fn: (_candles, ...args) => args.reduce((sum, x) => sum + x, 0) / args.length,
+        arity: null,
+    },
 };
 
-// run();
+const parser = new DSLParser(mockCandles, function_registry);
+const index = 2;
+const result = parser.evaluate("myfunc(1, 1, close(0))");
+console.log(`DSL at index ${index}:`, result);

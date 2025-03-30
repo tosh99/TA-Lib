@@ -16,9 +16,9 @@
     "build:esm": "tsc",
     "build:cjs": "tsc -p tsconfig.cjs.json",
     "build": "npm run build:esm && npm run build:cjs",
-    "publish": "npm publish",
-    "run": "tsc -p tsconfig.cjs.json --watch",
-    "testRun": "node dist/cjs/test.js"
+    "prepublishOnly": "npm run build",
+    "dev": "tsx --watch src/test.ts",
+    "test_run": "node dist/cjs/test.js"
   },
   "sideEffects": false,
   "files": [
