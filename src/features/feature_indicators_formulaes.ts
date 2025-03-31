@@ -418,7 +418,7 @@ export const DEFAULT_FUNCTION_REGISTRY: FunctionRegistry = {
                 default:
                     price = candle.close;
             }
-            
+
             const entry = context.entry_price;
             const stop = context.stop_loss;
             const target = context.target_price;

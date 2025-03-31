@@ -242,9 +242,9 @@ export class StrategyRunner {
             this.candle_decisions.push({
                 index,
                 decision: "IGNORE",
+                last_traded_price: candle.close,
                 stop_loss: null,
                 take_profit: null,
-                last_traded_price: candle.close,
                 long_expression,
                 short_expression,
             });
@@ -288,9 +288,9 @@ export class StrategyRunner {
         this.candle_decisions.push({
             index,
             decision: `ENTRY ${side}`,
+            last_traded_price: candle.close,
             stop_loss: stop_price,
             take_profit: target_price,
-            last_traded_price: candle.close,
         });
         this.state = {
             in_position: true, // Now in a position
@@ -320,6 +320,16 @@ export class StrategyRunner {
 
         let exit_reason: "tp" | "sl" | "sl_breakeven" | "exit_condition" | null = null; // Initialize exit reason
 
+        // === Stop Loss ===
+        // Check if stop loss has been hit
+        if (state.stop_price !== null && ((is_long && candle.low <= state.stop_price) || (is_short && candle.high >= state.stop_price))) {
+            if (state.breakeven_triggered && state.stop_price === state.entry_price) {
+                exit_reason = "sl_breakeven"; // Special case: breakeven SL
+            } else {
+                exit_reason = "sl"; // Normal SL
+            }
+        }
+
         // === Breakeven ===
         if (!state.breakeven_triggered && this.strategy.breakeven_trigger_expr) {
             // If breakeven not triggered and expression exists
@@ -335,9 +345,9 @@ export class StrategyRunner {
                 this.candle_decisions.push({
                     index,
                     decision: `UPDATED_SL_TO_BREAKEVEN`,
+                    last_traded_price: candle.close,
                     stop_loss: state.entry_price!,
                     take_profit: state.take_profit_price!,
-                    last_traded_price: candle.close,
                     update_sl_expression,
                     breakeven_expression,
                 });
@@ -386,9 +396,9 @@ export class StrategyRunner {
                 this.candle_decisions.push({
                     index,
                     decision: `UPDATED_SL: ${trailing_sl}`,
+                    last_traded_price: candle.close,
                     stop_loss: trailing_sl,
                     take_profit: state.take_profit_price!,
-                    last_traded_price: candle.close,
                     update_sl_expression,
                     breakeven_expression,
                 });
@@ -400,23 +410,13 @@ export class StrategyRunner {
                 this.candle_decisions.push({
                     index,
                     decision: `UPDATED_SL: ${trailing_sl}`,
+                    last_traded_price: candle.close,
                     stop_loss: trailing_sl,
                     take_profit: state.take_profit_price!,
-                    last_traded_price: candle.close,
                     update_sl_expression,
                     breakeven_expression,
                 });
                 this.state.stop_price = trailing_sl;
-            }
-        }
-
-        // === Stop Loss ===
-        // Check if stop loss has been hit
-        if (state.stop_price !== null && ((is_long && candle.low <= state.stop_price) || (is_short && candle.high >= state.stop_price))) {
-            if (state.breakeven_triggered && state.stop_price === state.entry_price) {
-                exit_reason = "sl_breakeven"; // Special case: breakeven SL
-            } else {
-                exit_reason = "sl"; // Normal SL
             }
         }
 
@@ -453,9 +453,9 @@ export class StrategyRunner {
             this.candle_decisions.push({
                 index,
                 decision: `HOLD`,
+                last_traded_price: candle.close,
                 stop_loss: state.stop_price!,
                 take_profit: state.take_profit_price!,
-                last_traded_price: candle.close,
                 update_sl_expression,
                 breakeven_expression,
             });
@@ -484,9 +484,9 @@ export class StrategyRunner {
         this.candle_decisions.push({
             index,
             decision: `EXITED: ${exit_reason}`,
+            last_traded_price: candle.close,
             stop_loss: state.stop_price!,
             take_profit: state.take_profit_price!,
-            last_traded_price: candle.close,
             update_sl_expression,
             breakeven_expression,
         });
@@ -512,24 +512,6 @@ export class StrategyRunner {
 
         // === Capital Update & Reset State ===
         this.capital += pnl; // Update capital with trade profit/loss
-
-        console.table({
-            entry_index: state.entry_index!,
-            exit_index: index,
-            entry_time: state.entry_time!,
-            exit_time: candle.time,
-            entry_price,
-            exit_price,
-            position_size: qty,
-            side: state.side!,
-            pnl,
-            pnl_percent,
-            reason: exit_reason,
-            stop_price: state.stop_price ?? undefined,
-            take_profit_price: state.take_profit_price ?? undefined,
-            trailing_triggered: state.trailing_stop_active,
-            breakeven_triggered: state.breakeven_triggered,
-        });
 
         // Reset state for next trade
         this.state = {
