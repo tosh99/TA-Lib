@@ -1,4 +1,5 @@
 import round from "lodash.round";
+import { EventEmitter } from "node:events";
 import { Candle } from "../types/types_ohlc";
 import { DSLParser, FunctionRegistry } from "./feature_dsl_parser";
 
@@ -163,7 +164,7 @@ export interface StrategyCandleDecision {
     take_profit_expression?: null | string;
 }
 
-export class StrategyRunner {
+export class StrategyRunner extends EventEmitter {
     private start_time = Date.now(); // Start time for backtesting
     private candles: Candle[]; // Array of price candles for backtesting
     private strategy: StrategySchema; // Strategy configuration
@@ -174,6 +175,7 @@ export class StrategyRunner {
     private candle_decisions: StrategyCandleDecision[] = []; // Array to store decisions made at each candle
 
     constructor(candles: Candle[], strategy: StrategySchema, function_registry: FunctionRegistry) {
+        super();
         this.candles = candles; // Initialize candles array
         this.strategy = strategy; // Initialize strategy configuration
         this.function_registry = function_registry; // Initialize function registry
@@ -260,7 +262,7 @@ export class StrategyRunner {
         }
     }
 
-    public run(): StrategyTrade[] {
+    public async run(): Promise<StrategyTrade[]> {
         try {
             for (let i = 200; i < this.candles.length; i++) {
                 // Loop through each candle
@@ -279,6 +281,14 @@ export class StrategyRunner {
                 } else {
                     // If already in a position
                     this.try_exit(i, candle, parser); // Try to exit the current position
+                }
+
+                const progress = (i / this.candles.length) * 100;
+                if (progress % 5 === 0) {
+                    this.emit("progress", {
+                        progress: progress,
+                        report: this.get_report(),
+                    });
                 }
             }
         } catch (e) {

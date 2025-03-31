@@ -97,9 +97,14 @@ const s_schema: StrategySchema = {
 };
 
 const strat = new StrategyRunner(candles, s_schema, DEFAULT_FUNCTION_REGISTRY);
-const res = strat.run();
-const report = strat.get_report();
-const decisions = report.candle_decisions;
-console.table(decisions.filter((item) => !item.decision.includes("IGNORE")));
-console.log(report.metric);
-// fs.writeFileSync(process.cwd() + "/src/report.json", JSON.stringify(report, null, 2));
+// const report = strat.get_report();
+// const decisions = report.candle_decisions;
+// console.table(decisions.filter((item) => !item.decision.includes("IGNORE")));
+// console.log(report.metric);
+// // fs.writeFileSync(process.cwd() + "/src/report.json", JSON.stringify(report, null, 2));
+strat.on("progress", (progress) => {
+    console.log(progress);
+});
+
+strat.run().then();
+
