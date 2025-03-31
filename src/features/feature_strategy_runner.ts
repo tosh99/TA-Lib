@@ -189,26 +189,29 @@ export class StrategyRunner {
     }
 
     public run(): StrategyTrade[] {
-        for (let i = 200; i < this.candles.length; i++) {
-            // Loop through each candle
-            const sliced = this.candles.slice(0, i + 1); // Get candles up to current index
-            const candle = this.candles[i]; // Get current candle
-            const parser = new DSLParser(sliced, this.function_registry); // Create parser with available candles
+        try {
+            for (let i = 200; i < this.candles.length; i++) {
+                // Loop through each candle
+                const sliced = this.candles.slice(0, i + 1); // Get candles up to current index
+                const candle = this.candles[i]; // Get current candle
+                const parser = new DSLParser(sliced, this.function_registry); // Create parser with available candles
 
-            if (this.state.cooldown_remaining > 0) {
-                // If in cooldown period
-                this.state.cooldown_remaining--; // Decrement cooldown counter
-            }
+                if (this.state.cooldown_remaining > 0) {
+                    // If in cooldown period
+                    this.state.cooldown_remaining--; // Decrement cooldown counter
+                }
 
-            if (!this.state.in_position) {
-                // If not currently in a position
-                this.try_entry(i, candle, parser); // Try to enter a new position
-            } else {
-                // If already in a position
-                this.try_exit(i, candle, parser); // Try to exit the current position
+                if (!this.state.in_position) {
+                    // If not currently in a position
+                    this.try_entry(i, candle, parser); // Try to enter a new position
+                } else {
+                    // If already in a position
+                    this.try_exit(i, candle, parser); // Try to exit the current position
+                }
             }
+        } catch (e) {
+            console.error(e);
         }
-
         return this.trades; // Return completed trades
     }
 
