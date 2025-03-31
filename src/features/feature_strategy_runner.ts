@@ -1,5 +1,5 @@
 import round from "lodash.round";
-import { EventEmitter } from "node:events";
+import { EventEmitter } from "events";
 import { Candle } from "../types/types_ohlc";
 import { DSLParser, FunctionRegistry } from "./feature_dsl_parser";
 
@@ -16,6 +16,8 @@ export interface StrategySchema {
     cooldown_period?: number;
     // Whether to allow re-entry in the same direction
     allow_reentry?: boolean;
+    // Warmup Period
+    warmup_period?: number;
 
     // Directional entry rules
     // DSL expression for long entry condition
@@ -162,13 +164,16 @@ export interface StrategyCandleDecision {
     breakeven_expression?: null | string;
     update_sl_expression?: null | string;
     take_profit_expression?: null | string;
+    exit_expression?: null | string;
 }
 
 export class StrategyRunner extends EventEmitter {
+    private readonly candles: Candle[]; // Array of price candles for backtesting
+    private readonly strategy: StrategySchema; // Strategy configuration
+    private readonly function_registry: FunctionRegistry; // Registry of functions available to DSL
+    private readonly warmup_period: number;
+
     private start_time = Date.now(); // Start time for backtesting
-    private candles: Candle[]; // Array of price candles for backtesting
-    private strategy: StrategySchema; // Strategy configuration
-    private function_registry: FunctionRegistry; // Registry of functions available to DSL
     private trades: StrategyTrade[] = []; // Array to store completed trades
     private capital: number; // Current capital amount
     private state: StrategyState; // Current state of the strategy
@@ -180,6 +185,7 @@ export class StrategyRunner extends EventEmitter {
         this.strategy = strategy; // Initialize strategy configuration
         this.function_registry = function_registry; // Initialize function registry
         this.capital = strategy.capital; // Set initial capital from strategy
+        this.warmup_period = strategy.warmup_period || 100; // Set warm-up
 
         // Validate the strategy configuration
         this.evaluateStrategy();
@@ -229,9 +235,9 @@ export class StrategyRunner extends EventEmitter {
         }
 
         // Check stop loss and take profit expressions
-        if (strategy.entry_long && !strategy.stop_loss_expr_long) {
-            errors.push("Stop loss expression for long positions is required when long entry is defined");
-        }
+        // if (strategy.entry_long && !strategy.stop_loss_expr_long) {
+        //     errors.push("Stop loss expression for long positions is required when long entry is defined");
+        // }
 
         if (strategy.entry_short && !strategy.stop_loss_expr_short) {
             errors.push("Stop loss expression for short positions is required when short entry is defined");
@@ -264,9 +270,9 @@ export class StrategyRunner extends EventEmitter {
 
     public async run(): Promise<StrategyTrade[]> {
         try {
-            for (let i = 200; i < this.candles.length; i++) {
+            for (let i = this.warmup_period; i < this.candles.length; i++) {
                 // Loop through each candle
-                const sliced = this.candles.slice(0, i + 1); // Get candles up to current index
+                const sliced = this.candles.slice(i - this.warmup_period > 0 ? i - this.warmup_period : 0, i + 1); // Get candles up to current index
                 const candle = this.candles[i]; // Get current candle
                 const parser = new DSLParser(sliced, this.function_registry); // Create parser with available candles
 
@@ -283,8 +289,8 @@ export class StrategyRunner extends EventEmitter {
                     this.try_exit(i, candle, parser); // Try to exit the current position
                 }
 
-                const progress = (i / this.candles.length) * 100;
-                if (progress % 5 === 0) {
+                const progress = ((i + 1) / this.candles.length) * 100;
+                if (progress % 2 === 0) {
                     this.emit("progress", {
                         progress: progress,
                         report: this.get_report(),
@@ -362,7 +368,7 @@ export class StrategyRunner extends EventEmitter {
         stop_gap = stop_gap === 0 ? 0.01 : stop_gap; // Ensure stop gap is not zero
 
         // Calculate position size based on risk and capital constraints
-        let position_size = Math.floor(capital_to_risk / stop_gap);
+        let position_size = Math.floor(capital_to_risk / stop_gap) || Infinity;
 
         // Check capital constraint
         const max_position_by_capital = Math.floor(this.capital / entry_price);
@@ -406,6 +412,7 @@ export class StrategyRunner extends EventEmitter {
         const current_price = candle.close; // Use close price as current price
         let breakeven_expression: string | null = null;
         let update_sl_expression: string | null = null;
+        let exit_expression: string | null = null;
 
         let exit_reason: "tp" | "sl" | "sl_breakeven" | "exit_condition" | null = null; // Initialize exit reason
         let decision_made = false; // Flag to track if a decision has been made
@@ -547,6 +554,8 @@ export class StrategyRunner extends EventEmitter {
                     position_size: state.position_size,
                 });
 
+                exit_expression = parser.get_last_resolved_expression();
+
                 if (should_exit === true) {
                     // If exit condition met
                     exit_reason = "exit_condition"; // Set exit reason to exit condition
@@ -563,6 +572,7 @@ export class StrategyRunner extends EventEmitter {
                 take_profit: state.take_profit_price!,
                 update_sl_expression,
                 breakeven_expression,
+                exit_expression,
             });
         }
 
@@ -597,6 +607,7 @@ export class StrategyRunner extends EventEmitter {
             take_profit: state.take_profit_price!,
             update_sl_expression,
             breakeven_expression,
+            exit_expression,
         });
 
         // Add completed trade to trades array

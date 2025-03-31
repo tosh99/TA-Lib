@@ -1,6 +1,6 @@
 {
   "name": "ta-pattern-lib",
-  "version": "0.1.16",
+  "version": "0.1.23",
   "description": "Technical Analysis and Backtesting Framework for Node.js",
   "main": "dist/cjs/index.js",
   "module": "dist/esm/index.js",
