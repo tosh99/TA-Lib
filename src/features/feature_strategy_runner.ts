@@ -16,7 +16,6 @@ export interface StrategySchema {
     // Whether to allow re-entry in the same direction
     allow_reentry?: boolean;
 
-
     // Directional entry rules
     // DSL expression for long entry condition
     entry_long?: string;
@@ -116,37 +115,39 @@ export interface StrategyState {
     last_exit_index?: number;
     // Reason for last trade exit (stop loss/take profit/exit condition)
     last_exit_reason?: "tp" | "exit_condition" | "sl" | "sl_breakeven";
-    // The parsed DSL expression of the ENTRY
-    expression: null | string;
 }
 
 export interface StrategyReport {
-    // Name of the strategy
-    strategy: string;
-    // Initial capital at the start of backtesting
-    capital_start: number;
-    // Final capital at the end of backtesting
-    capital_end: number;
-    // Total number of trades executed
-    total_trades: number;
-    // Percentage of winning trades
-    win_rate: number;
-    // Average profit/loss per trade
-    avg_pnl: number;
-    // Average percentage profit/loss per trade
-    avg_pnl_percent: number;
-    // Average profit of winning trades
-    avg_win: number;
-    // Average loss of losing trades
-    avg_loss: number;
-    // Average number of candles a position was held
-    avg_hold: number;
-    // Total profit/loss from all trades
-    total_profit: number;
+    metric: {
+        // Name of the strategy
+        strategy: string;
+        // Initial capital at the start of backtesting
+        capital_start: number;
+        // Final capital at the end of backtesting
+        capital_end: number;
+        // Total number of trades executed
+        total_trades: number;
+        // Percentage of winning trades
+        win_rate: number;
+        // Average profit/loss per trade
+        avg_pnl: number;
+        // Average percentage profit/loss per trade
+        avg_pnl_percent: number;
+        // Average profit of winning trades
+        avg_win: number;
+        // Average loss of losing trades
+        avg_loss: number;
+        // Average number of candles a position was held
+        avg_hold: number;
+        // Total profit/loss from all trades
+        total_profit: number;
+        // Time taken for backtesting in milliseconds
+        total_time_taken: number;
+    };
     // Array of all completed trades
     trades: StrategyTrade[];
-    // Time taken for backtesting in milliseconds
-    total_time_taken: number;
+    // Candle decisions made at each candle
+    candle_decisions: StrategyCandleDecision[];
 }
 
 export interface StrategyCandleDecision {
@@ -159,6 +160,7 @@ export interface StrategyCandleDecision {
     short_expression?: null | string;
     breakeven_expression?: null | string;
     update_sl_expression?: null | string;
+    take_profit_expression?: null | string;
 }
 
 export class StrategyRunner {
@@ -177,6 +179,9 @@ export class StrategyRunner {
         this.function_registry = function_registry; // Initialize function registry
         this.capital = strategy.capital; // Set initial capital from strategy
 
+        // Validate the strategy configuration
+        this.evaluateStrategy();
+
         // Initialize strategy state with default values
         this.state = {
             in_position: false, // Not in a position initially
@@ -190,8 +195,69 @@ export class StrategyRunner {
             trailing_stop_active: false, // Trailing stop not active
             cooldown_remaining: 0, // No cooldown initially
             side: null, // No position side
-            expression: null, // No expression initially
         };
+    }
+
+    /**
+     * Validates the strategy configuration to ensure it meets minimum requirements
+     * and has consistent settings.
+     * @throws Error if the strategy configuration is invalid
+     */
+    private evaluateStrategy(): void {
+        const strategy = this.strategy;
+        const errors: string[] = [];
+
+        // Check required fields
+        if (!strategy.name) {
+            errors.push("Strategy name is required");
+        }
+
+        if (strategy.capital <= 0) {
+            errors.push("Capital must be greater than zero");
+        }
+
+        // Check entry conditions
+        if (!strategy.entry_long && !strategy.entry_short) {
+            errors.push("At least one entry condition (long or short) must be defined");
+        }
+
+        // Check risk parameters
+        if (strategy.risk_per_trade !== undefined && (strategy.risk_per_trade <= 0 || strategy.risk_per_trade > 1)) {
+            errors.push("Risk per trade must be between 0 and 1");
+        }
+
+        // Check stop loss and take profit expressions
+        if (strategy.entry_long && !strategy.stop_loss_expr_long) {
+            errors.push("Stop loss expression for long positions is required when long entry is defined");
+        }
+
+        if (strategy.entry_short && !strategy.stop_loss_expr_short) {
+            errors.push("Stop loss expression for short positions is required when short entry is defined");
+        }
+
+        // Check for consistent trailing stop configuration
+        if (strategy.trailing_trigger_expr_long && !strategy.trailing_offset_expr_long) {
+            errors.push("Trailing offset expression for long positions is required when trailing trigger is defined");
+        }
+
+        if (strategy.trailing_trigger_expr_short && !strategy.trailing_offset_expr_short) {
+            errors.push("Trailing offset expression for short positions is required when trailing trigger is defined");
+        }
+
+        // Check transaction charges
+        if (strategy.transaction_charges !== undefined && strategy.transaction_charges < 0) {
+            errors.push("Transaction charges cannot be negative");
+        }
+
+        // Check cooldown period
+        if (strategy.cooldown_period !== undefined && strategy.cooldown_period < 0) {
+            errors.push("Cooldown period cannot be negative");
+        }
+
+        // If any errors were found, throw an exception with all error messages
+        if (errors.length > 0) {
+            throw new Error(`Strategy validation failed:\n${errors.join("\n")}`);
+        }
     }
 
     public run(): StrategyTrade[] {
@@ -225,6 +291,7 @@ export class StrategyRunner {
         if (this.state.cooldown_remaining > 0) return; // Skip if in cooldown period
         if (this.state.in_position) return; // Skip if already in a position
         let expression: string | null = null;
+        let take_profit_expression: string | null = null;
 
         // Evaluate entry conditions using DSL
         const long_entry = this.strategy.entry_long ? parser.evaluate(this.strategy.entry_long) : false; // Check long entry condition
@@ -272,6 +339,7 @@ export class StrategyRunner {
         const target_expr = side === "long" ? this.strategy.target_expr_long : side === "short" ? this.strategy.target_expr_short : this.strategy.target_expr_long;
 
         const target_price = target_expr ? round(Number(parser.evaluate(target_expr, context)), 2) : null;
+        take_profit_expression = parser.get_last_resolved_expression();
 
         context.target_price = target_price || 0; // Update context with target price
 
@@ -302,6 +370,7 @@ export class StrategyRunner {
             last_traded_price: candle.close,
             stop_loss: stop_price,
             take_profit: target_price,
+            take_profit_expression,
         });
         this.state = {
             in_position: true, // Now in a position
@@ -315,7 +384,6 @@ export class StrategyRunner {
             trailing_stop_active: false, // Reset trailing stop flag
             cooldown_remaining: 0, // Reset cooldown
             side, // Set position side
-            expression, // Set entry expression
         };
     }
 
@@ -559,7 +627,6 @@ export class StrategyRunner {
             last_exit_price: exit_price, // Store last exit price
             last_exit_index: index, // Store last exit index
             last_exit_reason: exit_reason, // Store last exit reason
-            expression: null, // Clear entry expression
         };
     }
 
@@ -582,23 +649,22 @@ export class StrategyRunner {
 
         // Return comprehensive strategy report
         return {
-            total_time_taken: Date.now() - this.start_time, // Total time taken to run strategy in milliseconds
-            strategy: this.strategy.name, // Strategy name
-            capital_start: this.strategy.capital, // Starting capital
-            capital_end: this.capital, // Ending capital
-            total_trades, // Total number of trades
-            win_rate: Number(win_rate.toFixed(2)), // Win rate with 2 decimal places
-            avg_pnl: Number(avg_pnl.toFixed(2)), // Average profit/loss with 2 decimal places
-            avg_pnl_percent: Number(avg_pnl_percent.toFixed(2)), // Average percentage profit/loss with 2 decimal places
-            avg_win: Number(avg_win.toFixed(2)), // Average winning trade with 2 decimal places
-            avg_loss: Number(avg_loss.toFixed(2)), // Average losing trade with 2 decimal places
-            avg_hold: Number(avg_hold.toFixed(2)), // Average holding period with 2 decimal places
-            total_profit: Number(total_pnl.toFixed(2)), // Total profit/loss with 2 decimal places
+            metric: {
+                total_time_taken: Date.now() - this.start_time, // Total time taken to run strategy in milliseconds
+                strategy: this.strategy.name, // Strategy name
+                capital_start: this.strategy.capital, // Starting capital
+                capital_end: this.capital, // Ending capital
+                total_trades, // Total number of trades
+                win_rate: Number(win_rate.toFixed(2)), // Win rate with 2 decimal places
+                avg_pnl: Number(avg_pnl.toFixed(2)), // Average profit/loss with 2 decimal places
+                avg_pnl_percent: Number(avg_pnl_percent.toFixed(2)), // Average percentage profit/loss with 2 decimal places
+                avg_win: Number(avg_win.toFixed(2)), // Average winning trade with 2 decimal places
+                avg_loss: Number(avg_loss.toFixed(2)), // Average losing trade with 2 decimal places
+                avg_hold: Number(avg_hold.toFixed(2)), // Average holding period with 2 decimal places
+                total_profit: Number(total_pnl.toFixed(2)), // Total profit/loss with 2 decimal places
+            },
             trades: this.trades, // All completed trades
+            candle_decisions: this.candle_decisions, // All decisions made at each candle
         };
-    }
-
-    public get_candle_decisions(): StrategyCandleDecision[] {
-        return this.candle_decisions;
     }
 }

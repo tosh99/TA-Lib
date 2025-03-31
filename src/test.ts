@@ -94,13 +94,12 @@ const s_schema: StrategySchema = {
     breakeven_trigger_expr_short: `close(0) <= entry_price() - atr(14, 0) * 0.5`,
     trailing_trigger_expr_short: `close(0) <= entry_price() - atr(14, 0) * 1.0`,
     trailing_offset_expr_short: `atr(14, 0) * 0.8`, // Often the same offset is used for long and short
-
 };
 
 const strat = new StrategyRunner(candles, s_schema, DEFAULT_FUNCTION_REGISTRY);
 const res = strat.run();
-const decisions = strat.get_candle_decisions();
-console.table(decisions.filter((item) => !item.decision.includes("IGNORE")));
 const report = strat.get_report();
-console.log(report);
+const decisions = report.candle_decisions;
+console.table(decisions.filter((item) => !item.decision.includes("IGNORE")));
+console.log(report.metric);
 // fs.writeFileSync(process.cwd() + "/src/report.json", JSON.stringify(report, null, 2));
