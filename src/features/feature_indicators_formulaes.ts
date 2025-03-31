@@ -303,12 +303,28 @@ export const DEFAULT_FUNCTION_REGISTRY: FunctionRegistry = {
         },
         arity: 1,
     },
+    volume: {
+        fn: (candles, context, offset) => {
+            return candles[candles.length - 1 - offset].volume;
+        },
+        arity: 1,
+    },
     ema: {
         fn: (candles, context, period, offset) => {
             return compute_ema(
                 candles.map((item) => item.close),
                 period,
             )[candles.length - 1 - offset];
+        },
+        arity: 2,
+    },
+    rsi: {
+        fn: (candles, context, period, offset) => {
+            const rsi = compute_rsi(
+                candles.map((item) => item.close),
+                period,
+            );
+            return rsi[rsi.length - 1 - offset];
         },
         arity: 2,
     },
@@ -383,6 +399,10 @@ export const DEFAULT_FUNCTION_REGISTRY: FunctionRegistry = {
     },
     risk_reward_ratio: {
         fn: (candles, context) => (candles[candles.length - 1].close - context.entry_price) / (context.entry_price - context.stop_loss),
+        arity: null,
+    },
+    stop_loss: {
+        fn: (candles, context) => context.stop_loss,
         arity: null,
     },
 };

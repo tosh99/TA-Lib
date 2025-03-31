@@ -137,9 +137,12 @@ export interface StrategyReport {
     total_profit: number;
     // Array of all completed trades
     trades: StrategyTrade[];
+    // Time taken for backtesting in milliseconds
+    total_time_taken: number;
 }
 
 export class StrategyRunner {
+    private start_time = Date.now(); // Start time for backtesting
     private candles: Candle[]; // Array of price candles for backtesting
     private strategy: StrategySchema; // Strategy configuration
     private function_registry: FunctionRegistry; // Registry of functions available to DSL
@@ -170,7 +173,7 @@ export class StrategyRunner {
     }
 
     public run(): StrategyTrade[] {
-        for (let i = 0; i < this.candles.length; i++) {
+        for (let i = 10; i < this.candles.length; i++) {
             // Loop through each candle
             const sliced = this.candles.slice(0, i + 1); // Get candles up to current index
             const candle = this.candles[i]; // Get current candle
@@ -208,12 +211,14 @@ export class StrategyRunner {
         if (!side) return; // Exit if no valid entry signal
 
         const entry_price = candle.close; // Use close price as entry price
-        const context = { entry_price }; // Create context for DSL evaluation
+        const context = { entry_price, stop_price: 0 }; // Create context for DSL evaluation
 
         // Calculate stop loss price using DSL if provided
         const stop_price = this.strategy.stop_loss_expr ? Number(parser.evaluate(this.strategy.stop_loss_expr, context)) : null;
 
+        
         // Calculate take profit price using DSL if provided
+        context.stop_price = stop_price || 0; // Update context with stop price
         const target_price = this.strategy.target_expr ? Number(parser.evaluate(this.strategy.target_expr, context)) : null;
 
         // Calculate position sizing
@@ -431,6 +436,7 @@ export class StrategyRunner {
 
         // Return comprehensive strategy report
         return {
+            total_time_taken: Date.now() - this.start_time, // Total time taken to run strategy in milliseconds
             strategy: this.strategy.name, // Strategy name
             capital_start: this.strategy.capital, // Starting capital
             capital_end: this.capital, // Ending capital
