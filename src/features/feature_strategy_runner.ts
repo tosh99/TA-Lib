@@ -70,7 +70,7 @@ export interface StrategyTrade {
     // Profit/Loss as a percentage
     pnl_percent: number;
     // Reason for trade exit (take profit, stop loss, or exit condition)
-    reason: "tp" | "sl" | "exit_condition";
+    reason: "tp" | "sl" | "sl_breakeven" | "exit_condition";
     // Stop loss price level (optional)
     stop_price?: number;
     // Take profit price level (optional)
@@ -109,7 +109,9 @@ export interface StrategyState {
     // Index of the candle where last trade was exited
     last_exit_index?: number;
     // Reason for last trade exit (stop loss/take profit/exit condition)
-    last_exit_reason?: "sl" | "tp" | "exit_condition";
+    last_exit_reason?: "tp" | "exit_condition" | "sl" | "sl_breakeven";
+    // The parsed DSL expression of the ENTRY
+    expression: null | string;
 }
 
 export interface StrategyReport {
@@ -141,6 +143,18 @@ export interface StrategyReport {
     total_time_taken: number;
 }
 
+export interface StrategyCandleDecision {
+    index: number;
+    decision: string;
+    last_traded_price: number;
+    stop_loss: null | number;
+    take_profit: null | number;
+    long_expression?: null | string;
+    short_expression?: null | string;
+    breakeven_expression?: null | string;
+    update_sl_expression?: null | string;
+}
+
 export class StrategyRunner {
     private start_time = Date.now(); // Start time for backtesting
     private candles: Candle[]; // Array of price candles for backtesting
@@ -149,6 +163,7 @@ export class StrategyRunner {
     private trades: StrategyTrade[] = []; // Array to store completed trades
     private capital: number; // Current capital amount
     private state: StrategyState; // Current state of the strategy
+    private candle_decisions: StrategyCandleDecision[] = []; // Array to store decisions made at each candle
 
     constructor(candles: Candle[], strategy: StrategySchema, function_registry: FunctionRegistry) {
         this.candles = candles; // Initialize candles array
@@ -169,11 +184,12 @@ export class StrategyRunner {
             trailing_stop_active: false, // Trailing stop not active
             cooldown_remaining: 0, // No cooldown initially
             side: null, // No position side
+            expression: null, // No expression initially
         };
     }
 
     public run(): StrategyTrade[] {
-        for (let i = 10; i < this.candles.length; i++) {
+        for (let i = 200; i < this.candles.length; i++) {
             // Loop through each candle
             const sliced = this.candles.slice(0, i + 1); // Get candles up to current index
             const candle = this.candles[i]; // Get current candle
@@ -199,27 +215,50 @@ export class StrategyRunner {
     private try_entry(index: number, candle: Candle, parser: DSLParser): void {
         if (this.state.cooldown_remaining > 0) return; // Skip if in cooldown period
         if (this.state.in_position) return; // Skip if already in a position
+        let expression: string | null = null;
 
         // Evaluate entry conditions using DSL
         const long_entry = this.strategy.entry_long ? parser.evaluate(this.strategy.entry_long) : false; // Check long entry condition
+        const long_expression = parser.get_last_resolved_expression(); // Get last resolved expression
+
         const short_entry = this.strategy.entry_short ? parser.evaluate(this.strategy.entry_short) : false; // Check short entry condition
+        const short_expression = parser.get_last_resolved_expression(); // Get last resolved expression
 
         let side: "long" | "short" | null = null; // Initialize position side
-        if (long_entry === true) side = "long"; // Set side to long if long entry condition is true
-        if (short_entry === true) side = "short"; // Set side to short if short entry condition is true
+        if (long_entry === true) {
+            side = "long";
+            expression = long_expression;
+        } // Set side to long if long entry condition is true
+        if (short_entry === true) {
+            side = "short";
+            expression = short_expression;
+        } // Set side to short if short entry condition is true
 
-        if (!side) return; // Exit if no valid entry signal
+        if (!side) {
+            this.candle_decisions.push({
+                index,
+                decision: "IGNORE",
+                stop_loss: null,
+                take_profit: null,
+                last_traded_price: candle.close,
+                long_expression,
+                short_expression,
+            });
+            return;
+        } // Exit if no valid entry signal
 
         const entry_price = candle.close; // Use close price as entry price
-        const context = { entry_price, stop_price: 0 }; // Create context for DSL evaluation
+        const context = { entry_price, stop_price: 0, target_price: 0 }; // Create context for DSL evaluation
 
         // Calculate stop loss price using DSL if provided
         const stop_price = this.strategy.stop_loss_expr ? Number(parser.evaluate(this.strategy.stop_loss_expr, context)) : null;
 
-        
         // Calculate take profit price using DSL if provided
         context.stop_price = stop_price || 0; // Update context with stop price
+
         const target_price = this.strategy.target_expr ? Number(parser.evaluate(this.strategy.target_expr, context)) : null;
+
+        context.target_price = target_price || 0; // Update context with stop price
 
         // Calculate position sizing
         const risk_per_trade = this.strategy.risk_per_trade ?? 0.01; // Get risk per trade or default to 1%
@@ -243,6 +282,29 @@ export class StrategyRunner {
         }
 
         // Update state with new position details
+        console.table({
+            type: "ENTRY",
+            index,
+            open: candle.open,
+            close: candle.close,
+            high: candle.high,
+            low: candle.low,
+            entry_price,
+            stop_price,
+            target_price,
+            risk_reward_ratio: ((target_price || 0) - entry_price) / (entry_price - (stop_price || 0)),
+            position_size,
+            side,
+            expression,
+        });
+
+        this.candle_decisions.push({
+            index,
+            decision: `ENTRY ${side}`,
+            stop_loss: stop_price,
+            take_profit: target_price,
+            last_traded_price: candle.close,
+        });
         this.state = {
             in_position: true, // Now in a position
             entry_index: index, // Set entry index
@@ -255,6 +317,7 @@ export class StrategyRunner {
             trailing_stop_active: false, // Reset trailing stop flag
             cooldown_remaining: 0, // Reset cooldown
             side, // Set position side
+            expression, // Set entry expression
         };
     }
 
@@ -265,8 +328,9 @@ export class StrategyRunner {
         const is_long = state.side === "long"; // Check if position is long
         const is_short = state.side === "short"; // Check if position is short
         const current_price = candle.close; // Use close price as current price
+        let is_decision = false; // Flag to indicate if a decision has been made
 
-        let exit_reason: "tp" | "sl" | "exit_condition" | null = null; // Initialize exit reason
+        let exit_reason: "tp" | "sl" | "sl_breakeven" | "exit_condition" | null = null; // Initialize exit reason
 
         // === Breakeven ===
         if (!state.breakeven_triggered && this.strategy.breakeven_trigger_expr) {
@@ -274,9 +338,20 @@ export class StrategyRunner {
             const be_trigger = parser.evaluate(this.strategy.breakeven_trigger_expr, {
                 // Evaluate breakeven trigger condition
                 entry_price: state.entry_price!,
+                target_price: state.take_profit_price!,
+                stop_loss: state.stop_price!,
                 position_size: state.position_size,
             });
             if (be_trigger === true) {
+                this.candle_decisions.push({
+                    index,
+                    decision: `UPDATED_SL_TO_BREAKEVEN`,
+                    stop_loss: state.entry_price!,
+                    take_profit: state.take_profit_price!,
+                    last_traded_price: candle.close,
+                });
+                is_decision = true;
+
                 // If breakeven condition met
                 this.state.breakeven_triggered = true; // Set breakeven flag
                 this.state.stop_price = state.entry_price!; // Move stop to entry price
@@ -289,6 +364,8 @@ export class StrategyRunner {
             const trailing_triggered = parser.evaluate(this.strategy.trailing_trigger_expr, {
                 // Evaluate trailing stop trigger condition
                 entry_price: state.entry_price!,
+                target_price: state.take_profit_price!,
+                stop_loss: state.stop_price!,
                 position_size: state.position_size,
             });
             if (trailing_triggered === true) {
@@ -304,6 +381,8 @@ export class StrategyRunner {
                 // Calculate trailing stop offset
                 parser.evaluate(this.strategy.trailing_offset_expr, {
                     entry_price: state.entry_price!,
+                    target_price: state.take_profit_price!,
+                    stop_loss: state.stop_price!,
                     position_size: state.position_size,
                 }),
             );
@@ -313,11 +392,27 @@ export class StrategyRunner {
 
             // Update stop price for long positions if new stop is higher
             if (is_long && (state.stop_price === null || trailing_sl > state.stop_price)) {
+                this.candle_decisions.push({
+                    index,
+                    decision: `UPDATED_SL: ${trailing_sl}`,
+                    stop_loss: trailing_sl,
+                    take_profit: state.take_profit_price!,
+                    last_traded_price: candle.close,
+                });
+                is_decision = true;
                 this.state.stop_price = trailing_sl;
             }
 
             // Update stop price for short positions if new stop is lower
             if (is_short && (state.stop_price === null || trailing_sl < state.stop_price)) {
+                this.candle_decisions.push({
+                    index,
+                    decision: `UPDATED_SL: ${trailing_sl}`,
+                    stop_loss: trailing_sl,
+                    take_profit: state.take_profit_price!,
+                    last_traded_price: candle.close,
+                });
+                is_decision = true;
                 this.state.stop_price = trailing_sl;
             }
         }
@@ -325,7 +420,11 @@ export class StrategyRunner {
         // === Stop Loss ===
         // Check if stop loss has been hit
         if (state.stop_price !== null && ((is_long && candle.low <= state.stop_price) || (is_short && candle.high >= state.stop_price))) {
-            exit_reason = "sl"; // Set exit reason to stop loss
+            if (state.breakeven_triggered && state.stop_price === state.entry_price) {
+                exit_reason = "sl_breakeven"; // Special case: breakeven SL
+            } else {
+                exit_reason = "sl"; // Normal SL
+            }
         }
 
         // === Take Profit ===
@@ -345,6 +444,8 @@ export class StrategyRunner {
                 const should_exit = parser.evaluate(rule, {
                     // Evaluate exit condition
                     entry_price: state.entry_price!,
+                    target_price: state.take_profit_price!,
+                    stop_loss: state.stop_price!,
                     position_size: state.position_size,
                 });
 
@@ -355,7 +456,16 @@ export class StrategyRunner {
             }
         }
 
-        if (!exit_reason) return; // Exit if no exit reason found
+        if (!exit_reason) {
+            this.candle_decisions.push({
+                index,
+                decision: `HOLD`,
+                stop_loss: state.stop_price!,
+                take_profit: state.take_profit_price!,
+                last_traded_price: candle.close,
+            });
+            return;
+        } // Exit if no exit reason found
 
         // === Finalize Trade ===
         const qty = state.position_size; // Get position size
@@ -375,6 +485,14 @@ export class StrategyRunner {
         const pnl = gross_pnl - charges;
         // Calculate percentage profit/loss
         const pnl_percent = ((exit_price - entry_price) / entry_price) * (is_long ? 1 : -1) * 100;
+
+        this.candle_decisions.push({
+            index,
+            decision: `EXITED: ${exit_reason}`,
+            stop_loss: state.stop_price!,
+            take_profit: state.take_profit_price!,
+            last_traded_price: candle.close,
+        });
 
         // Add completed trade to trades array
         this.trades.push({
@@ -398,6 +516,24 @@ export class StrategyRunner {
         // === Capital Update & Reset State ===
         this.capital += pnl; // Update capital with trade profit/loss
 
+        console.table({
+            entry_index: state.entry_index!,
+            exit_index: index,
+            entry_time: state.entry_time!,
+            exit_time: candle.time,
+            entry_price,
+            exit_price,
+            position_size: qty,
+            side: state.side!,
+            pnl,
+            pnl_percent,
+            reason: exit_reason,
+            stop_price: state.stop_price ?? undefined,
+            take_profit_price: state.take_profit_price ?? undefined,
+            trailing_triggered: state.trailing_stop_active,
+            breakeven_triggered: state.breakeven_triggered,
+        });
+
         // Reset state for next trade
         this.state = {
             in_position: false, // No longer in a position
@@ -414,6 +550,7 @@ export class StrategyRunner {
             last_exit_price: exit_price, // Store last exit price
             last_exit_index: index, // Store last exit index
             last_exit_reason: exit_reason, // Store last exit reason
+            expression: null, // Clear entry expression
         };
     }
 
@@ -450,5 +587,9 @@ export class StrategyRunner {
             total_profit: Number(total_pnl.toFixed(2)), // Total profit/loss with 2 decimal places
             trades: this.trades, // All completed trades
         };
+    }
+
+    public get_candle_decisions(): StrategyCandleDecision[] {
+        return this.candle_decisions;
     }
 }

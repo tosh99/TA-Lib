@@ -1,0 +1,15 @@
+{
+  "total_time_taken": 6,
+  "strategy": "VWAP + EMA Pullback with Breakout Confirmation",
+  "capital_start": 1000000,
+  "capital_end": 1000000,
+  "total_trades": 0,
+  "win_rate": 0,
+  "avg_pnl": 0,
+  "avg_pnl_percent": 0,
+  "avg_win": 0,
+  "avg_loss": 0,
+  "avg_hold": 0,
+  "total_profit": 0,
+  "trades": []
+}

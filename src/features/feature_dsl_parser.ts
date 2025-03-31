@@ -29,6 +29,7 @@ export type FunctionRegistry = Record<string, FunctionMeta>; // Maps function na
 export class DSLParser {
     private candles: Candle[]; // Array of price candles available for calculations
     private function_registry: FunctionRegistry; // Registry of available functions
+    private last_resolved_expression: string | null = null; // Store the last fully resolved expression
 
     /**
      * Creates a new DSLParser instance with candle data sliced up to the current evaluation point.
@@ -56,6 +57,8 @@ export class DSLParser {
      */
     public evaluate(expression: string, context: Record<string, number> = {}): number | boolean {
         const resolved = this.parse_and_evaluate_expression(expression, context); // Parse and resolve all function calls
+        this.last_resolved_expression = resolved?.toString().replaceAll('\n', '').trim(); // Store the resolved expression
+
         try {
             // Evaluate using JS eval() after all functions are resolved to values
             return eval(resolved);
@@ -63,6 +66,16 @@ export class DSLParser {
             // Provide detailed error information if evaluation fails
             throw new Error(`DSL evaluation error: ${err instanceof Error ? err.message : String(err)}\nResolved: ${resolved}`);
         }
+    }
+
+    /**
+     * Returns the last fully resolved expression after all function calls were evaluated.
+     * Useful for debugging and understanding how expressions are processed.
+     *
+     * @returns The last resolved expression or null if no expression has been evaluated
+     */
+    public get_last_resolved_expression(): string | null {
+        return this.last_resolved_expression;
     }
     /**
      * Parses and resolves all function calls within a DSL expression

@@ -281,40 +281,41 @@ const calculate_smoothed_average = (data: number[], period: number): number[] =>
 export const DEFAULT_FUNCTION_REGISTRY: FunctionRegistry = {
     open: {
         fn: (candles, context, offset) => {
-            return candles[candles.length - 1 - offset].open;
+            return round(candles[candles.length - 1 - offset].open, 2);
         },
         arity: 1,
     },
     high: {
         fn: (candles, context, offset) => {
-            return candles[candles.length - 1 - offset].high;
+            return round(candles[candles.length - 1 - offset].high, 2);
         },
         arity: 1,
     },
     low: {
         fn: (candles, context, offset) => {
-            return candles[candles.length - 1 - offset].low;
+            return round(candles[candles.length - 1 - offset].low, 2);
         },
         arity: 1,
     },
     close: {
         fn: (candles, context, offset) => {
-            return candles[candles.length - 1 - offset].close;
+            return round(candles[candles.length - 1 - offset].close, 2);
         },
         arity: 1,
     },
     volume: {
         fn: (candles, context, offset) => {
-            return candles[candles.length - 1 - offset].volume;
+            return round(candles[candles.length - 1 - offset].volume, 2);
         },
         arity: 1,
     },
     ema: {
         fn: (candles, context, period, offset) => {
-            return compute_ema(
+            const ema = compute_ema(
                 candles.map((item) => item.close),
                 period,
-            )[candles.length - 1 - offset];
+            );
+            return round(ema[ema.length - 1 - offset], 2);
         },
         arity: 2,
     },
@@ -324,7 +325,7 @@ export const DEFAULT_FUNCTION_REGISTRY: FunctionRegistry = {
                 candles.map((item) => item.close),
                 period,
             );
-            return rsi[rsi.length - 1 - offset];
+            return round(rsi[rsi.length - 1 - offset], 2);
         },
         arity: 2,
     },
@@ -336,7 +337,7 @@ export const DEFAULT_FUNCTION_REGISTRY: FunctionRegistry = {
                 long_period,
                 signal_period,
             );
-            return macd.macd[macd.macd.length - 1 - offset];
+            return round(macd.macd[macd.macd.length - 1 - offset], 2);
         },
         arity: 4,
     },
@@ -355,21 +356,21 @@ export const DEFAULT_FUNCTION_REGISTRY: FunctionRegistry = {
     obv: {
         fn: (candles, context, offset) => {
             const obv = compute_obv(candles);
-            return obv[obv.length - 1 - offset];
+            return round(obv[obv.length - 1 - offset], 2);
         },
         arity: 1,
     },
     vwap: {
         fn: (candles, context, offset) => {
             const vwap = compute_vwap(candles);
-            return vwap[vwap.length - 1 - offset];
+            return round(vwap[vwap.length - 1 - offset], 2);
         },
         arity: 1,
     },
     atr: {
         fn: (candles, context, period, offset) => {
             const atr_values = compute_atr(candles, period);
-            return atr_values[atr_values.length - 1 - offset];
+            return round(atr_values[atr_values.length - 1 - offset], 2);
         },
         arity: 2,
     },
@@ -390,19 +391,45 @@ export const DEFAULT_FUNCTION_REGISTRY: FunctionRegistry = {
         arity: null,
     },
     entry_price: {
-        fn: (candles, context) => context.entry_price,
+        fn: (candles, context) => round(context.entry_price, 2),
         arity: null,
     },
     exit_price: {
-        fn: (candles, context) => context.exit_price,
+        fn: (candles, context) => round(context.exit_price, 2),
         arity: null,
     },
     risk_reward_ratio: {
-        fn: (candles, context) => (candles[candles.length - 1].close - context.entry_price) / (context.entry_price - context.stop_loss),
+        fn: (candles, context, ohlc = 3) => {
+            // ohlc: 0 = OPEN, 1 = high, 2 = low, 3 = close
+            const candle = candles[candles.length - 1];
+            let price = candle.close;
+
+            switch (ohlc) {
+                case 0:
+                    price = candle.open;
+                    break;
+                case 1:
+                    price = candle.high;
+                    break;
+                case 2:
+                    price = candle.low;
+                    break;
+                case 3:
+                default:
+                    price = candle.close;
+            }
+            
+            const entry = context.entry_price;
+            const stop = context.stop_loss;
+            const target = context.target_price;
+            const is_long = entry < target;
+
+            return is_long ? round((price - entry) / (entry - stop), 2) : round((entry - price) / (stop - entry), 2);
+        },
         arity: null,
     },
     stop_loss: {
-        fn: (candles, context) => context.stop_loss,
+        fn: (candles, context) => context.stop_price,
         arity: null,
     },
 };

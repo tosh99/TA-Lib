@@ -6,4 +6,4 @@ export { correlate, stats_calculate_similarity, stats_calculate_slope, compute_e
 export { IHeikinAshi, Candle } from "./types/types_ohlc";
 
 export { DSLParser, FunctionRegistry } from "./features/feature_dsl_parser";
-export { StrategySchema, StrategyRunner, StrategyTrade, StrategyState, StrategyReport } from "./features/feature_strategy_runner";
+export { StrategySchema, StrategyRunner, StrategyTrade, StrategyState, StrategyReport, StrategyCandleDecision } from "./features/feature_strategy_runner";
