@@ -319,6 +319,7 @@ export class StrategyRunner {
         let update_sl_expression: string | null = null;
 
         let exit_reason: "tp" | "sl" | "sl_breakeven" | "exit_condition" | null = null; // Initialize exit reason
+        let decision_made = false; // Flag to track if a decision has been made
 
         // === Stop Loss ===
         // Check if stop loss has been hit
@@ -351,6 +352,8 @@ export class StrategyRunner {
                     update_sl_expression,
                     breakeven_expression,
                 });
+
+                decision_made = true; // Set decision flag
 
                 // If breakeven condition met
                 this.state.breakeven_triggered = true; // Set breakeven flag
@@ -402,6 +405,8 @@ export class StrategyRunner {
                     update_sl_expression,
                     breakeven_expression,
                 });
+
+                decision_made = true; // Set decision flag
                 this.state.stop_price = trailing_sl;
             }
 
@@ -416,6 +421,8 @@ export class StrategyRunner {
                     update_sl_expression,
                     breakeven_expression,
                 });
+
+                decision_made = true; // Set decision flag
                 this.state.stop_price = trailing_sl;
             }
         }
@@ -449,7 +456,7 @@ export class StrategyRunner {
             }
         }
 
-        if (!exit_reason) {
+        if (!exit_reason || !decision_made) {
             this.candle_decisions.push({
                 index,
                 decision: `HOLD`,
@@ -459,6 +466,9 @@ export class StrategyRunner {
                 update_sl_expression,
                 breakeven_expression,
             });
+        }
+
+        if (!exit_reason) {
             return;
         } // Exit if no exit reason found
 
