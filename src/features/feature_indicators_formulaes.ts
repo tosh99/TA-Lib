@@ -219,10 +219,10 @@ export const compute_vwap = (data: Candle[]): number[] => {
     for (let i = 0; i < data.length; i++) {
         const typical_price = (data[i].high + data[i].low + data[i].close) / 3;
         const volume = parseInt(data[i].volume.toString());
-        
+
         cumulative_volume += volume;
         cumulative_price_volume += typical_price * volume;
-        
+
         const vwap = cumulative_price_volume / cumulative_volume;
         vwap_values.push(vwap);
     }
@@ -239,11 +239,11 @@ export const compute_atr = (data: Candle[], period: number = 14): number[] => {
         const high = data[i].high;
         const low = data[i].low;
         const prev_close = data[i - 1].close;
-        
+
         const tr1 = high - low;
         const tr2 = Math.abs(high - prev_close);
         const tr3 = Math.abs(low - prev_close);
-        
+
         const true_range = Math.max(tr1, tr2, tr3);
         true_ranges.push(true_range);
     }
@@ -252,7 +252,7 @@ export const compute_atr = (data: Candle[], period: number = 14): number[] => {
     if (true_ranges.length >= period) {
         const first_atr = true_ranges.slice(0, period).reduce((sum, tr) => sum + tr, 0) / period;
         atr_values.push(first_atr);
-        
+
         // Calculate subsequent ATR values using the smoothing formula
         for (let i = period; i < true_ranges.length; i++) {
             const current_atr = (atr_values[atr_values.length - 1] * (period - 1) + true_ranges[i]) / period;
@@ -357,6 +357,18 @@ export const DEFAULT_FUNCTION_REGISTRY: FunctionRegistry = {
         },
         arity: 2,
     },
+    min: {
+        fn: (candles, context, ...args) => Math.min(...args),
+        arity: null,
+    },
+    max: {
+        fn: (candles, context, ...args) => Math.max(...args),
+        arity: null,
+    },
+    abs: {
+        fn: (candles, context, value) => Math.abs(value),
+        arity: 1,
+    },
     avg: {
         fn: (candles, context, ...args) => args.reduce((sum, x) => sum + x, 0) / args.length,
         arity: null,
@@ -367,6 +379,10 @@ export const DEFAULT_FUNCTION_REGISTRY: FunctionRegistry = {
     },
     exit_price: {
         fn: (candles, context) => context.exit_price,
+        arity: null,
+    },
+    risk_reward_ratio: {
+        fn: (candles, context) => (candles[candles.length - 1].close - context.entry_price) / (context.entry_price - context.stop_loss),
         arity: null,
     },
 };
