@@ -27,28 +27,74 @@ const candles: Candle[] = rs.data.symbol_ticks.map((item: any) => ({
 
 const s_schema: StrategySchema = {
     name: "VWAP + EMA Pullback with Breakout Confirmation",
+    capital: 1000000,
+    risk_per_trade: 0.005,
+    cooldown_period: 6,
+    transaction_charges: 0.00021,
+    allow_reentry: true, // Added example, set as needed
 
+    // --- Long Conditions ---
     entry_long: `
-      close(0) > vwap(0) &&
-      ema(20, 0) > ema(50, 0) &&
-      close(1) > open(1) &&
-      volume(1) > avg(volume(2), volume(3)) &&
-      rsi(14, 0) > 50
+ close(0) > vwap(0) &&
+ close(0) > ema(20, 0) &&
+ ema(20, 0) > ema(50, 0) &&
+ ema(50, 0) > ema(100, 0) &&
+ 
+ rsi(14, 0) > 50 &&
+ rsi(14, 0) > rsi(14, 1) &&
+ 
+ volume(0) > avg(volume(1), volume(2), volume(3), volume(4)) * 1.2 &&
+ 
+ atr(14, 0) > atr(14, 20) &&
+ 
+ close(0) > open(0) &&
+ close(1) > open(1) &&
+ low(0) > low(1)
     `,
 
-    stop_loss_expr: `min(low(1), ema(50, 0)) - atr(14, 0) * 1.2`,
-    target_expr: `entry_price() + (entry_price() - stop_loss()) * 2`,
+    exit_long: `
+ ema(20, 0) < ema(50, 0) ||
+ rsi(14, 0) < 40
+    `,
 
-    // Option 1: Use different conditions
-    breakeven_trigger_expr: `close(0) >= entry_price() + atr(14, 0) * 0.5`, // Price moved 0.5 ATR
-    trailing_trigger_expr: `close(0) >= entry_price() + atr(14, 0) * 1.0`, // Price moved 1.0 ATR
+    stop_loss_expr_long: `min(low(1), low(2)) - atr(14, 0) * (rsi(14, 0) > 70 ? 1.5 : 1.0)`,
+    target_expr_long: `entry_price() + (entry_price() - stop_loss()) * (rsi(14, 0) < 40 ? 3.0 : 2.5)`, // Note: Uses stop_loss() which refers to the calculated stop loss value
 
-    trailing_offset_expr: `atr(14, 0) * 1.0`, // Trail using 1x ATR
+    breakeven_trigger_expr_long: `close(0) >= entry_price() + atr(14, 0) * 0.5`,
+    trailing_trigger_expr_long: `close(0) >= entry_price() + atr(14, 0) * 1.0`,
+    trailing_offset_expr_long: `atr(14, 0) * 0.8`,
 
-    capital: 1000000,
-    risk_per_trade: 0.01,
-    cooldown_period: 3,
-    transaction_charges: 0.00035,
+    // --- Short Conditions ---
+    entry_short: `
+ close(0) < vwap(0) &&
+ close(0) < ema(20, 0) &&
+ ema(20, 0) < ema(50, 0) &&
+ ema(50, 0) < ema(100, 0) &&
+ 
+ rsi(14, 0) < 50 &&
+ rsi(14, 0) < rsi(14, 1) &&
+ 
+ volume(0) > avg(volume(1), volume(2), volume(3), volume(4)) * 1.2 &&
+ 
+ atr(14, 0) > atr(14, 20) &&
+ 
+ close(0) < open(0) &&
+ close(1) < open(1) &&
+ high(0) < high(1)
+    `,
+
+    exit_short: `
+ ema(20, 0) > ema(50, 0) ||
+ rsi(14, 0) > 60
+    `,
+
+    stop_loss_expr_short: `max(high(1), high(2)) + atr(14, 0) * (rsi(14, 0) < 30 ? 1.5 : 1.0)`,
+    target_expr_short: `entry_price() - (stop_loss() - entry_price()) * (rsi(14, 0) > 60 ? 3.0 : 2.5)`, // Note: Uses stop_loss() which refers to the calculated stop loss value
+
+    breakeven_trigger_expr_short: `close(0) <= entry_price() - atr(14, 0) * 0.5`,
+    trailing_trigger_expr_short: `close(0) <= entry_price() - atr(14, 0) * 1.0`,
+    trailing_offset_expr_short: `atr(14, 0) * 0.8`, // Often the same offset is used for long and short
+
 };
 
 const strat = new StrategyRunner(candles, s_schema, DEFAULT_FUNCTION_REGISTRY);

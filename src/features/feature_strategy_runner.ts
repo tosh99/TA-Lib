@@ -5,6 +5,17 @@ import { DSLParser, FunctionRegistry } from "./feature_dsl_parser";
 export interface StrategySchema {
     // Name of the trading strategy
     name: string;
+    // Transaction fee as a decimal (e.g., 0.00035 for 0.035%)
+    transaction_charges?: number;
+    // Risk per trade as a decimal (e.g., 0.01 for 1%)
+    risk_per_trade?: number;
+    // Initial trading capital
+    capital: number;
+    // Number of periods to wait after a trade before entering new positions
+    cooldown_period?: number;
+    // Whether to allow re-entry in the same direction
+    allow_reentry?: boolean;
+
 
     // Directional entry rules
     // DSL expression for long entry condition
@@ -19,34 +30,28 @@ export interface StrategySchema {
     exit_short?: string;
 
     // Dynamic DSL-based stop/target
-    // DSL expression for calculating stop loss price
-    stop_loss_expr?: string;
-    // DSL expression for calculating take profit price
-    target_expr?: string;
-
-    // Risk & capital
-    // Risk per trade as a decimal (e.g., 0.01 for 1%)
-    risk_per_trade?: number;
-    // Initial trading capital
-    capital: number;
-
-    // Controls
-    // Number of periods to wait after a trade before entering new positions
-    cooldown_period?: number;
-    // Whether to allow re-entry in the same direction
-    allow_reentry?: boolean;
+    // DSL expression for calculating stop loss price for long positions
+    stop_loss_expr_long?: string;
+    // DSL expression for calculating stop loss price for short positions
+    stop_loss_expr_short?: string;
+    // DSL expression for calculating take profit price for long positions
+    target_expr_long?: string;
+    // DSL expression for calculating take profit price for short positions
+    target_expr_short?: string;
 
     // Breakeven and trailing stop
-    // DSL condition like "close(0) >= entry_price + 2"
-    breakeven_trigger_expr?: string;
-    // DSL condition to activate trailing stop
-    trailing_trigger_expr?: string;
-    // DSL value like "atr(14, 0) * 1.2" for trailing stop offset
-    trailing_offset_expr?: string;
-
-    // Charges
-    // Transaction fee as a decimal (e.g., 0.00035 for 0.035%)
-    transaction_charges?: number;
+    // DSL condition like "close(0) >= entry_price + 2" for long positions
+    breakeven_trigger_expr_long?: string;
+    // DSL condition like "close(0) <= entry_price - 2" for short positions
+    breakeven_trigger_expr_short?: string;
+    // DSL condition to activate trailing stop for long positions
+    trailing_trigger_expr_long?: string;
+    // DSL condition to activate trailing stop for short positions
+    trailing_trigger_expr_short?: string;
+    // DSL value like "atr(14, 0) * 1.2" for trailing stop offset for long positions
+    trailing_offset_expr_long?: string;
+    // DSL value like "atr(14, 0) * 1.2" for trailing stop offset for short positions
+    trailing_offset_expr_short?: string;
 }
 
 export interface StrategyTrade {
@@ -254,15 +259,21 @@ export class StrategyRunner {
         const entry_price = candle.close; // Use close price as entry price
         const context = { entry_price, stop_price: 0, target_price: 0 }; // Create context for DSL evaluation
 
+        // Select appropriate stop loss expression based on position direction
+        const stop_loss_expr = side === "long" ? this.strategy.stop_loss_expr_long : side === "short" ? this.strategy.stop_loss_expr_short : this.strategy.stop_loss_expr_long;
+
         // Calculate stop loss price using DSL if provided
-        const stop_price = this.strategy.stop_loss_expr ? round(Number(parser.evaluate(this.strategy.stop_loss_expr, context)), 2) : null;
+        const stop_price = stop_loss_expr ? round(Number(parser.evaluate(stop_loss_expr, context)), 2) : null;
 
         // Calculate take profit price using DSL if provided
         context.stop_price = stop_price || 0; // Update context with stop price
 
-        const target_price = this.strategy.target_expr ? round(Number(parser.evaluate(this.strategy.target_expr, context)), 2) : null;
+        // Select appropriate target expression based on position direction
+        const target_expr = side === "long" ? this.strategy.target_expr_long : side === "short" ? this.strategy.target_expr_short : this.strategy.target_expr_long;
 
-        context.target_price = target_price || 0; // Update context with stop price
+        const target_price = target_expr ? round(Number(parser.evaluate(target_expr, context)), 2) : null;
+
+        context.target_price = target_price || 0; // Update context with target price
 
         // Calculate position sizing
         const risk_per_trade = this.strategy.risk_per_trade ?? 0.01; // Get risk per trade or default to 1%
@@ -332,9 +343,12 @@ export class StrategyRunner {
         }
 
         // === Breakeven ===
-        if (!state.breakeven_triggered && this.strategy.breakeven_trigger_expr) {
+        // Select appropriate breakeven expression based on position direction
+        const breakeven_expr = is_long ? this.strategy.breakeven_trigger_expr_long : is_short ? this.strategy.breakeven_trigger_expr_short : null;
+
+        if (!state.breakeven_triggered && breakeven_expr) {
             // If breakeven not triggered and expression exists
-            const be_trigger = parser.evaluate(this.strategy.breakeven_trigger_expr, {
+            const be_trigger = parser.evaluate(breakeven_expr, {
                 // Evaluate breakeven trigger condition
                 entry_price: state.entry_price!,
                 target_price: state.take_profit_price!,
@@ -362,9 +376,12 @@ export class StrategyRunner {
         }
 
         // === Trailing Stop Activation ===
-        if (!state.trailing_stop_active && this.strategy.trailing_trigger_expr) {
+        // Select appropriate trailing trigger expression based on position direction
+        const trailing_trigger_expr = is_long ? this.strategy.trailing_trigger_expr_long : is_short ? this.strategy.trailing_trigger_expr_short : null;
+
+        if (!state.trailing_stop_active && trailing_trigger_expr) {
             // If trailing stop not active and expression exists
-            const trailing_triggered = parser.evaluate(this.strategy.trailing_trigger_expr, {
+            const trailing_triggered = parser.evaluate(trailing_trigger_expr, {
                 // Evaluate trailing stop trigger condition
                 entry_price: state.entry_price!,
                 target_price: state.take_profit_price!,
@@ -379,11 +396,14 @@ export class StrategyRunner {
         }
 
         // === Trailing Stop Update ===
-        if (state.trailing_stop_active && this.strategy.trailing_offset_expr) {
+        // Select appropriate trailing offset expression based on position direction
+        const trailing_offset_expr = is_long ? this.strategy.trailing_offset_expr_long : is_short ? this.strategy.trailing_offset_expr_short : null;
+
+        if (state.trailing_stop_active && trailing_offset_expr) {
             // If trailing stop active and offset expression exists
             const trailing_offset = Number(
                 // Calculate trailing stop offset
-                parser.evaluate(this.strategy.trailing_offset_expr, {
+                parser.evaluate(trailing_offset_expr, {
                     entry_price: state.entry_price!,
                     target_price: state.take_profit_price!,
                     stop_loss: state.stop_price!,
