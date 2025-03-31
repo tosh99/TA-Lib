@@ -392,7 +392,7 @@ export class StrategyRunner {
             );
 
             // Calculate new trailing stop level based on position direction
-            const trailing_sl = is_long ? current_price - trailing_offset : current_price + trailing_offset;
+            const trailing_sl = is_long ? round(current_price - trailing_offset, 2) : round(current_price + trailing_offset, 2);
 
             // Update stop price for long positions if new stop is higher
             if (is_long && (state.stop_price === null || trailing_sl > state.stop_price)) {
@@ -456,7 +456,7 @@ export class StrategyRunner {
             }
         }
 
-        if (!exit_reason || !decision_made) {
+        if (!exit_reason && !decision_made) {
             this.candle_decisions.push({
                 index,
                 decision: `HOLD`,
@@ -487,9 +487,9 @@ export class StrategyRunner {
         const charges = (this.strategy.transaction_charges ?? 0) * turnover;
 
         // Calculate net profit/loss
-        const pnl = gross_pnl - charges;
+        const pnl = round(gross_pnl - charges, 2);
         // Calculate percentage profit/loss
-        const pnl_percent = ((exit_price - entry_price) / entry_price) * (is_long ? 1 : -1) * 100;
+        const pnl_percent = round(((exit_price - entry_price) / entry_price) * (is_long ? 1 : -1) * 100, 3);
 
         this.candle_decisions.push({
             index,

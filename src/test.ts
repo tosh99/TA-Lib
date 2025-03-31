@@ -55,6 +55,6 @@ const strat = new StrategyRunner(candles, s_schema, DEFAULT_FUNCTION_REGISTRY);
 const res = strat.run();
 const decisions = strat.get_candle_decisions();
 console.table(decisions.filter((item) => !item.decision.includes("IGNORE")));
-// const report = strat.get_report();
-// console.log(report);
+const report = strat.get_report();
+console.log(report);
 // fs.writeFileSync(process.cwd() + "/src/report.json", JSON.stringify(report, null, 2));
