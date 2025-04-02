@@ -2,207 +2,46 @@ import round from "lodash.round";
 import { EventEmitter } from "events";
 import { Candle } from "../types/types_ohlc";
 import { DSLParser, FunctionRegistry } from "./feature_dsl_parser";
-
-export interface StrategySchema {
-    // Name of the trading strategy
-    name: string;
-    // Transaction fee as a decimal (e.g., 0.00035 for 0.035%)
-    transaction_charges?: number;
-    // Risk per trade as a decimal (e.g., 0.01 for 1%)
-    risk_per_trade?: number;
-    // Initial trading capital
-    capital: number;
-    // Number of periods to wait after a trade before entering new positions
-    cooldown_period?: number;
-    // Whether to allow re-entry in the same direction
-    allow_reentry?: boolean;
-    // Warmup Period
-    warmup_period?: number;
-
-    // Directional entry rules
-    // DSL expression for long entry condition
-    entry_long?: string;
-    // DSL expression for short entry condition
-    entry_short?: string;
-
-    // Optional exit rules
-    // DSL expression for exiting long positions
-    exit_long?: string;
-    // DSL expression for exiting short positions
-    exit_short?: string;
-
-    // Dynamic DSL-based stop/target
-    // DSL expression for calculating stop loss price for long positions
-    stop_loss_expr_long?: string;
-    // DSL expression for calculating stop loss price for short positions
-    stop_loss_expr_short?: string;
-    // DSL expression for calculating take profit price for long positions
-    target_expr_long?: string;
-    // DSL expression for calculating take profit price for short positions
-    target_expr_short?: string;
-
-    // Breakeven and trailing stop
-    // DSL condition like "close(0) >= entry_price + 2" for long positions
-    breakeven_trigger_expr_long?: string;
-    // DSL condition like "close(0) <= entry_price - 2" for short positions
-    breakeven_trigger_expr_short?: string;
-    // DSL condition to activate trailing stop for long positions
-    trailing_trigger_expr_long?: string;
-    // DSL condition to activate trailing stop for short positions
-    trailing_trigger_expr_short?: string;
-    // DSL value like "atr(14, 0) * 1.2" for trailing stop offset for long positions
-    trailing_offset_expr_long?: string;
-    // DSL value like "atr(14, 0) * 1.2" for trailing stop offset for short positions
-    trailing_offset_expr_short?: string;
-}
-
-export interface StrategyTrade {
-    // Index position of trade entry in the candles array
-    entry_index: number;
-    // Index position of trade exit in the candles array
-    exit_index: number;
-    // Timestamp of trade entry
-    entry_time: string;
-    // Timestamp of trade exit
-    exit_time: string;
-    // Price at which the trade was entered
-    entry_price: number;
-    // Price at which the trade was exited
-    exit_price: number;
-    // Size of the trading position (quantity)
-    position_size: number;
-    // Direction of the trade (long or short)
-    side: "long" | "short";
-    // Profit/Loss in absolute terms
-    pnl: number;
-    // Profit/Loss as a percentage
-    pnl_percent: number;
-    // Reason for trade exit (take profit, stop loss, or exit condition)
-    reason: "tp" | "sl" | "sl_breakeven" | "exit_condition";
-    // Stop loss price level (optional)
-    stop_price?: number;
-    // Take profit price level (optional)
-    take_profit_price?: number;
-    // Whether trailing stop was activated during the trade
-    trailing_triggered?: boolean;
-    // Whether breakeven stop was activated during the trade
-    breakeven_triggered?: boolean;
-}
-
-export interface StrategyState {
-    // Whether currently holding a position
-    in_position: boolean;
-    // Index of the candle where position was entered
-    entry_index: number | null;
-    // Timestamp when position was entered
-    entry_time: string | null;
-    // Price at which position was entered
-    entry_price: number | null;
-    // Size/quantity of the trading position
-    position_size: number;
-    // Current stop loss price level
-    stop_price: number | null;
-    // Current take profit price level
-    take_profit_price: number | null;
-    // Whether breakeven stop has been triggered
-    breakeven_triggered: boolean;
-    // Whether trailing stop is currently active
-    trailing_stop_active: boolean;
-    // Number of periods remaining in cooldown
-    cooldown_remaining: number;
-    // Direction of current position (long/short)
-    side: "long" | "short" | null;
-    // Price at which last trade was exited
-    last_exit_price?: number;
-    // Index of the candle where last trade was exited
-    last_exit_index?: number;
-    // Reason for last trade exit (stop loss/take profit/exit condition)
-    last_exit_reason?: "tp" | "exit_condition" | "sl" | "sl_breakeven";
-}
-
-export interface StrategyReport {
-    metric: {
-        // Name of the strategy
-        strategy: string;
-        // Initial capital at the start of backtesting
-        capital_start: number;
-        // Final capital at the end of backtesting
-        capital_end: number;
-        // Total number of trades executed
-        total_trades: number;
-        // Percentage of winning trades
-        win_rate: number;
-        // Average profit/loss per trade
-        avg_pnl: number;
-        // Average percentage profit/loss per trade
-        avg_pnl_percent: number;
-        // Average profit of winning trades
-        avg_win: number;
-        // Average loss of losing trades
-        avg_loss: number;
-        // Average number of candles a position was held
-        avg_hold: number;
-        // Total profit/loss from all trades
-        total_profit: number;
-        // Time taken for backtesting in milliseconds
-        total_time_taken: number;
-    };
-    // Array of all completed trades
-    trades: StrategyTrade[];
-    // Candle decisions made at each candle
-    candle_decisions: StrategyCandleDecision[];
-}
-
-export interface StrategyCandleDecision {
-    index: number;
-    decision: string;
-    last_traded_price: number;
-    stop_loss: null | number;
-    take_profit: null | number;
-    long_expression?: null | string;
-    short_expression?: null | string;
-    breakeven_expression?: null | string;
-    update_sl_expression?: null | string;
-    take_profit_expression?: null | string;
-    exit_expression?: null | string;
-}
+import { StrategySchema, StrategyTrade, StrategyState, StrategyCandleDecision, StrategyReport } from "../types/types-strategy";
 
 export class StrategyRunner extends EventEmitter {
-    private readonly candles: Candle[]; // Array of price candles for backtesting
-    private readonly strategy: StrategySchema; // Strategy configuration
-    private readonly function_registry: FunctionRegistry; // Registry of functions available to DSL
+    private readonly candles: Candle[];
+    private readonly strategy: StrategySchema;
+    private readonly function_registry: FunctionRegistry;
     private readonly warmup_period: number;
+    private readonly lookback_period: number;
 
-    private start_time = Date.now(); // Start time for backtesting
-    private trades: StrategyTrade[] = []; // Array to store completed trades
-    private capital: number; // Current capital amount
-    private state: StrategyState; // Current state of the strategy
-    private candle_decisions: StrategyCandleDecision[] = []; // Array to store decisions made at each candle
+    private start_time = Date.now();
+    private trades: StrategyTrade[] = [];
+    private capital: number;
+    private state: StrategyState;
+    private candle_decisions: StrategyCandleDecision[] = [];
 
     constructor(candles: Candle[], strategy: StrategySchema, function_registry: FunctionRegistry) {
         super();
-        this.candles = candles; // Initialize candles array
-        this.strategy = strategy; // Initialize strategy configuration
-        this.function_registry = function_registry; // Initialize function registry
-        this.capital = strategy.capital; // Set initial capital from strategy
-        this.warmup_period = strategy.warmup_period || 100; // Set warm-up
+        this.candles = candles;
+        this.strategy = strategy;
+        this.function_registry = function_registry;
+        this.capital = strategy.capital;
+        this.warmup_period = strategy.warmup_period || 100;
+        this.lookback_period = strategy.lookback_period || 200;
 
         // Validate the strategy configuration
         this.evaluateStrategy();
 
         // Initialize strategy state with default values
         this.state = {
-            in_position: false, // Not in a position initially
-            entry_index: null, // No entry index
-            entry_time: null, // No entry time
-            entry_price: null, // No entry price
-            position_size: 0, // No position size
-            stop_price: null, // No stop price
-            take_profit_price: null, // No take profit price
-            breakeven_triggered: false, // Breakeven not triggered
-            trailing_stop_active: false, // Trailing stop not active
-            cooldown_remaining: 0, // No cooldown initially
-            side: null, // No position side
+            in_position: false,
+            entry_index: null,
+            entry_time: null,
+            entry_price: null,
+            position_size: 0,
+            stop_price: null,
+            take_profit_price: null,
+            breakeven_triggered: false,
+            trailing_stop_active: false,
+            cooldown_remaining: 0,
+            side: null,
         };
     }
 
@@ -272,7 +111,7 @@ export class StrategyRunner extends EventEmitter {
         try {
             for (let i = this.warmup_period; i < this.candles.length; i++) {
                 // Loop through each candle
-                const sliced = this.candles.slice(i - this.warmup_period > 0 ? i - this.warmup_period : 0, i + 1); // Get candles up to current index
+                const sliced = this.candles.slice(i - this.lookback_period > 0 ? i - this.lookback_period : 0, i + 1); // Get candles up to current index
                 const candle = this.candles[i]; // Get current candle
                 const parser = new DSLParser(sliced, this.function_registry); // Create parser with available candles
 
@@ -668,24 +507,59 @@ export class StrategyRunner extends EventEmitter {
 
         const avg_hold = total_trades > 0 ? this.trades.reduce((acc, t) => acc + (t.exit_index - t.entry_index), 0) / total_trades : 0; // Calculate average holding period
 
+        // Calculate maximum drawdown
+        let max_drawdown = 0;
+        let peak_capital = this.strategy.capital;
+        let running_capital = this.strategy.capital;
+        
+        for (const trade of this.trades) {
+            running_capital += trade.pnl;
+            if (running_capital > peak_capital) {
+                peak_capital = running_capital;
+            } else {
+                const drawdown = (peak_capital - running_capital) / peak_capital * 100;
+                if (drawdown > max_drawdown) {
+                    max_drawdown = drawdown;
+                }
+            }
+        }
+        
+        // Calculate Sharpe ratio
+        // Using daily returns assumption and risk-free rate of 6.3%
+        let sharpe_ratio = 0;
+        if (total_trades > 1) {
+            const returns = this.trades.map(t => t.pnl_percent / 100); // Convert percentage to decimal
+            const mean_return = returns.reduce((sum, r) => sum + r, 0) / returns.length;
+            const risk_free_rate = 0.063; // 6.3% annual risk-free rate
+            
+            // Calculate standard deviation of returns
+            const variance = returns.reduce((sum, r) => sum + Math.pow(r - mean_return, 2), 0) / (returns.length - 1);
+            const std_dev = Math.sqrt(variance);
+            
+            // Annualized Sharpe ratio (assuming daily returns)
+            sharpe_ratio = std_dev !== 0 ? ((mean_return - risk_free_rate / 252) / std_dev) * Math.sqrt(252) : 0;
+        }
+
         // Return comprehensive strategy report
         return {
             metric: {
-                total_time_taken: Date.now() - this.start_time, // Total time taken to run strategy in milliseconds
-                strategy: this.strategy.name, // Strategy name
-                capital_start: this.strategy.capital, // Starting capital
-                capital_end: this.capital, // Ending capital
-                total_trades, // Total number of trades
-                win_rate: Number(win_rate.toFixed(2)), // Win rate with 2 decimal places
-                avg_pnl: Number(avg_pnl.toFixed(2)), // Average profit/loss with 2 decimal places
-                avg_pnl_percent: Number(avg_pnl_percent.toFixed(2)), // Average percentage profit/loss with 2 decimal places
-                avg_win: Number(avg_win.toFixed(2)), // Average winning trade with 2 decimal places
-                avg_loss: Number(avg_loss.toFixed(2)), // Average losing trade with 2 decimal places
-                avg_hold: Number(avg_hold.toFixed(2)), // Average holding period with 2 decimal places
-                total_profit: Number(total_pnl.toFixed(2)), // Total profit/loss with 2 decimal places
+                total_time_taken: Date.now() - this.start_time,
+                strategy: this.strategy.name,
+                capital_start: this.strategy.capital,
+                capital_end: this.capital,
+                total_trades,
+                win_rate: round(Number(win_rate), 2),
+                avg_pnl: round(Number(avg_pnl), 2),
+                avg_pnl_percent: round(Number(avg_pnl_percent), 2),
+                avg_win: round(Number(avg_win), 2),
+                avg_loss: round(Number(avg_loss), 2),
+                avg_hold: round(Number(avg_hold), 2),
+                total_profit: round(Number(total_pnl), 2),
+                max_drawdown: round(Number(max_drawdown), 2),
+                sharpe_ratio: round(Number(sharpe_ratio), 2),
             },
-            trades: this.trades, // All completed trades
-            candle_decisions: this.candle_decisions, // All decisions made at each candle
+            trades: this.trades,
+            candle_decisions: this.candle_decisions,
         };
     }
 }

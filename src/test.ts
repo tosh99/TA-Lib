@@ -1,8 +1,8 @@
-import { DSLParser, FunctionRegistry } from "./features/feature_dsl_parser";
 import { DEFAULT_FUNCTION_REGISTRY } from "./features/feature_indicators_formulaes";
-import { StrategyRunner, StrategySchema } from "./features/feature_strategy_runner";
+import { StrategyRunner } from "./features/feature_strategy_runner";
 import { Candle } from "./types/types_ohlc";
 import * as fs from "fs";
+import { StrategySchema } from "./types/types-strategy";
 
 const r = fs.readFileSync(process.cwd() + "/src/sample_ohlc.json", "utf-8");
 const rs = JSON.parse(r);
@@ -77,11 +77,9 @@ const strat = new StrategyRunner(candles, s_schema, DEFAULT_FUNCTION_REGISTRY);
 // console.log(report.metric);
 // // fs.writeFileSync(process.cwd() + "/src/report.json", JSON.stringify(report, null, 2));
 strat.on("progress", (progress) => {
-    if(progress.progress === 100){
+    if (progress.progress === 100) {
         console.table(progress.report.trades);
     }
-   
 });
 
 strat.run().then();
-
